@@ -1,0 +1,88 @@
+@startuml
+
+!include https://raw.githubusercontent.com/bschwarz/puml-themes/master/themes/cerulean/puml-theme-cerulean.puml
+!include <elastic/common.puml>
+!include <elastic/elasticsearch/elasticsearch.puml>
+
+skinparam componentStyle uml1
+
+title Deployment diagram TO BE
+agent Client as client
+cloud "NGINX" as server
+
+frame Content {
+    database Postgres <<Movies>> as movies_database
+    node AdminPanel {
+        component [Django Admin] as django_admin
+        component [Django API] as django_api
+    }
+    label JWT_required
+    node ETL {
+        database State
+        component Extractor
+        component Transformer
+        component Loader
+
+        State <-u- Extractor
+        State <-u-> Transformer
+        State -u-> Loader
+    }
+
+    Extractor --> movies_database
+
+    JWT_required --> django_admin
+    AdminPanel <--> movies_database
+}
+
+frame Search {
+
+    ELASTICSEARCH(search_database, "Search", database)
+
+    node AsyncAPI {
+        component [Search API] as search_api
+        database Redis <<Cache>> as redis_async
+
+        search_api <-u-> redis_async
+    }
+
+    search_database  <--> AsyncAPI
+}
+
+
+frame Auth {
+    component [REST API] as auth_rest_api
+    component [JWT or OAuth] as jwt_or_oauth
+    database Postgres <<Auth>> as auth_database {
+        [User]
+        [Role]
+        [Permission]
+        [History]
+    }
+    database Redis <<Cache>> as auth_redis_database
+
+    jwt_or_oauth <-> auth_redis_database
+    auth_rest_api <-> jwt_or_oauth
+    auth_rest_api --> auth_database
+
+}
+
+frame UGC {
+    database "ClickHouse" as olap_database <<OLAP>>
+    database "Apache Kafka" as oltp_database <<OLTP>>
+    component "Python" <<UGC ETL>> as ugc_etl
+    component "FastAPI" <<UGC API>> as ugc_api
+
+    ugc_api --> oltp_database
+    ugc_etl --> oltp_database
+    ugc_etl --> olap_database
+
+}
+
+client <--> server
+Content <--> server
+UGC <--> server
+server <--> Auth
+
+Loader ..> search_database
+
+@enduml

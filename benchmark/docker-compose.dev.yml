@@ -1,0 +1,97 @@
+version: "3.1"
+
+services:
+
+  postgres_client:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_DB: test
+      POSTGRES_PASSWORD: 123qwe
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_volume:/var/lib/postgresql
+
+  clickhouse_server:
+    image: yandex/clickhouse-server
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_volume:/var/lib/clickhouse
+    networks:
+      - clickhouse_network
+
+  clickhouse_client:
+    image: yandex/clickhouse-client
+    entrypoint:
+      - /bin/sleep
+    command:
+      - infinity
+    networks:
+      - clickhouse_network
+
+  mongo_client:
+    image: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_volume:/data/db
+
+  vertica:
+    environment:
+      APP_DB_USER: "test"
+      # APP_DB_PASSWORD: "vertica"
+      TZ: "Europe/Moscow"
+    container_name: vertica-ce
+    image: vertica/vertica-ce
+    ports:
+      - "5433:5433"
+      - "5444:5444"
+    deploy:
+      mode: global
+    volumes:
+      - vertica_volume:/data
+
+  elastic:
+    image: elasticsearch:7.17.10
+    volumes:
+      - elastic_volume:/usr/share/elasticsearch/data:Z
+    ports:
+      - "9200:9200"
+    environment:
+      node.name: elasticsearch
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      discovery.type: single-node
+    restart: unless-stopped
+
+  cassandra:
+    image: cassandra:latest
+    volumes:
+      - cassandra_volume:/var/lib/cassandra/data
+    ports:
+      - 9042:9042
+    environment:
+      - CASSANDRA_START_RPC=true
+      - CASSANDRA_CLUSTER_NAME=MyCluster
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_DC=datacenter1
+
+volumes:
+  postgres_volume:
+  clickhouse_volume:
+  mongo_volume:
+  vertica_volume:
+  elastic_volume:
+  cassandra_volume:
+
+
+networks:
+  clickhouse_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.222.1.0/24

@@ -1,0 +1,101 @@
+version: '3.5'
+services:
+  zookeeper-ch:
+    image: zookeeper:3.7
+    container_name: zookeeper-ch
+    hostname: zookeeper
+    networks:
+      clickhouse-network:
+        ipv4_address: 172.23.0.10
+
+  clickhouse01:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse01
+    hostname: clickhouse01
+    networks:
+      clickhouse-network:
+        ipv4_address: 172.23.0.11
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HTTP_PORT}:${CLICKHOUSE_HTTP_PORT}"
+      - "127.0.0.1:${CLICKHOUSE_CLIENT_PORT}:${CLICKHOUSE_CLIENT_PORT}"
+    env_file:
+      - .env    
+    volumes:
+      - ${PWD}/clickhouse/clickhouse01:/etc/clickhouse-server
+    depends_on:
+      - zookeeper-ch
+
+  clickhouse02:
+    image: clickhouse/clickhouse-server:latest
+    container_name: clickhouse02
+    hostname: clickhouse02
+    networks:
+      clickhouse-network:
+        ipv4_address: 172.23.0.12
+    volumes:
+      - ${PWD}/clickhouse/clickhouse02:/etc/clickhouse-server
+    depends_on:
+      - zookeeper-ch
+
+  zookeeper-kafka:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: ${ZOOKEEPER_PORT}
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "127.0.0.1:${ZOOKEEPER_PORT}:${ZOOKEEPER_PORT}"
+    networks:
+      - clickhouse-network
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper-kafka
+    ports:
+      - "127.0.0.1:${KAFKA_EXTERNAL_PORT}:${KAFKA_EXTERNAL_PORT}"
+    env_file:
+      - .env
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper-kafka:${ZOOKEEPER_PORT}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:${KAFKA_INTERNAL_PORT},PLAINTEXT_HOST://kafka:${KAFKA_EXTERNAL_PORT}
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    networks:
+      - clickhouse-network
+
+  waiter:
+    image: busybox
+    container_name: waiter-container
+    volumes:
+      - ./wait_for_it.sh:/wait_for_it.sh
+    command: sh /wait_for_it.sh
+    env_file:
+      - .env
+    networks:
+      - clickhouse-network
+    depends_on:
+      - clickhouse01
+      - clickhouse02
+      - kafka
+
+  etl:
+    build:
+      context: .
+    container_name: etl-kafka-ch
+    env_file:
+      - .env
+    networks:
+      - clickhouse-network
+    depends_on:
+      - waiter      
+
+
+networks:
+  clickhouse-network:
+    name: clickhouse-network
+    ipam:
+      config:
+        - subnet: 172.23.0.0/24
